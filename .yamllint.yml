@@ -1,0 +1,18 @@
+# yamllint config for the automations repo.
+# Relaxed to match GitHub Actions conventions: the workflow `on:` key is a
+# YAML 1.1 truthy value, and Actions files routinely run past 80 cols.
+extends: default
+
+rules:
+  document-start: disable
+  line-length:
+    max: 120
+    level: warning
+  truthy:
+    # Allow `on:` (GitHub Actions trigger key) without quoting.
+    allowed-values: ['true', 'false', 'on', 'off']
+    check-keys: true
+  comments:
+    min-spaces-from-content: 1
+  brackets:
+    max-spaces-inside: 1

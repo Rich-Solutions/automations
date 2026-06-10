@@ -19,11 +19,13 @@ case $PLAN in
   *)     echo "Unknown plan: $PLAN"; exit 1 ;;
 esac
 
-# 24 hour cutoff for rolling window
-CUTOFF=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ') 2>/dev/null || \
-CUTOFF=$(date -u -v-24H +'%Y-%m-%dT%H:%M:%SZ')
+# 24 hour cutoff for rolling window.
+# GNU date (CI runners) uses `-d`; BSD date (macOS) uses `-v`. Suppress stderr
+# INSIDE the substitution so the failing variant doesn't leak a usage error.
+CUTOFF=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || \
+         date -u -v-24H +'%Y-%m-%dT%H:%M:%SZ')
 
-echo "Checking Jules quota for $REPO_ORG (Plan: $PLAN, Threshold: $THRESHOLD)..."
+echo "Checking Jules quota for $REPO_ORG (Plan: $PLAN, Cap: $LIMIT, Threshold: $THRESHOLD)..."
 echo "Window: $CUTOFF to $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
 # Get all repositories in the organization
