@@ -1,0 +1,84 @@
+# targets.yml — Rich-Solutions fleet registry
+#
+# Single source of truth for cross-repo campaign dispatch. Consumed by the
+# campaign workflows in .github/workflows/*.yml via scripts/dispatch.sh.
+#
+# Schema (see projects/rich-solutions-automations-design.md §3.2):
+#   schema_version : registry schema version (bump on breaking field changes)
+#   defaults       : org-wide defaults applied to every repo unless overridden
+#   campaigns      : campaign-level config (the JSON context payload per §4)
+#   repos          : enrolled repositories and which campaigns they opt into
+#
+# A repo runs a campaign only if BOTH are true:
+#   1. the campaign name appears in that repo's `campaigns:` list, and
+#   2. the repo is not `enrolled: false`.
+#
+# Repo `name` MUST be the real GitHub slug (owner/repo) — verified against
+# `gh repo list Rich-Solutions` on 2026-06-09. Note OptX_Trading (not "Optx")
+# and Aethel (default branch not yet set; pinned explicitly below).
+
+schema_version: 1
+
+defaults:
+  org: Rich-Solutions
+  # The on-demand entrypoint each target repo exposes in its own jules.yml.
+  # automations dispatches THIS workflow; the target repo owns the Jules session.
+  entrypoint_workflow: jules.yml
+  branch: main
+
+# Campaign definitions — the JSON context payload injected on dispatch (§4).
+# `risk` gates how aggressive Jules may be; `labels` are applied to opened PRs.
+campaigns:
+  latency-review:
+    description: Hot paths in API handlers, PTY loops, skill assembly.
+    schedule: "0 6 * * 1"            # Weekly, Monday 06:00 UTC
+    risk: medium
+    labels: [automation, latency-review]
+    focus:
+      - api-handlers
+      - pty-loops
+      - skill-assembly
+      - hot-paths
+
+  redundancy-reduction:
+    description: Duplicate logic blocks of 15 or more lines.
+    schedule: "0 6 1,15 * *"         # Bi-weekly, 1st & 15th 06:00 UTC
+    risk: medium
+    labels: [automation, redundancy-reduction]
+    focus:
+      - duplicate-logic
+    params:
+      min_duplicate_lines: 15
+
+  refactor-sweep:
+    description: Naming, dead code, module boundaries — low-risk only.
+    schedule: "0 8 1 * *"            # Monthly, 1st 08:00 UTC
+    risk: low
+    labels: [automation, refactor-sweep]
+    focus:
+      - naming
+      - dead-code
+      - module-boundaries
+
+repos:
+  - name: Rich-Solutions/Azimuth
+    stack: rust-tauri
+    branch: main
+    campaigns: [latency-review, redundancy-reduction, refactor-sweep]
+
+  - name: Rich-Solutions/Aethel
+    stack: typescript
+    # Default branch not yet set on the remote (empty defaultBranchRef as of
+    # 2026-06-09); pin explicitly so dispatch targets a real ref.
+    branch: main
+    campaigns: [latency-review, redundancy-reduction]
+
+  - name: Rich-Solutions/Synapse
+    stack: typescript
+    branch: main
+    campaigns: [redundancy-reduction, refactor-sweep]
+
+  - name: Rich-Solutions/OptX_Trading
+    stack: typescript
+    branch: main
+    campaigns: [latency-review]
