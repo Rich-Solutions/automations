@@ -1,0 +1,86 @@
+name: latency-review
+
+# Weekly latency campaign. Dispatches the latency-review campaign to every
+# repo enrolled in targets.yml, gated by the Jules quota spend guard.
+# Design: projects/rich-solutions-automations-design.md §4.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"          # Weekly, Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — log dispatches without triggering target repos"
+        type: boolean
+        default: true             # safe default: manual runs do not send live traffic
+
+permissions:
+  contents: read                  # checkout only; cross-repo auth is the App token
+
+concurrency:
+  group: campaign-latency-review
+  cancel-in-progress: false
+
+env:
+  CAMPAIGN: latency-review
+
+jobs:
+  # Spend guard (design §3.3). MUST pass before any dispatch.
+  quota-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.gate.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint GitHub App token (read fleet quota)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATIONS_APP_ID }}
+          private-key: ${{ secrets.AUTOMATIONS_APP_PRIVATE_KEY }}
+          owner: Rich-Solutions
+
+      - name: Run quota gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          JULES_PLAN_TIER: ${{ secrets.JULES_PLAN_TIER }}
+        run: |
+          if bash scripts/quota-gate.sh; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Quota gate blocked latency-review — skipping dispatch."
+            exit 1
+          fi
+
+  dispatch:
+    needs: quota-gate
+    if: ${{ needs.quota-gate.outputs.ok == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Mint GitHub App token (dispatch to fleet)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATIONS_APP_ID }}
+          private-key: ${{ secrets.AUTOMATIONS_APP_PRIVATE_KEY }}
+          owner: Rich-Solutions
+
+      - name: Dispatch campaign to enrolled repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Scheduled runs dispatch for real; manual runs honor the dry_run input
+          # (default true). Never send live traffic from a manual test.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: bash scripts/dispatch.sh
